@@ -1,10 +1,16 @@
-/*
-|   |   |   |   |   |   |   |   |
+#include "ArduPID.h"
 
+ArduPID myController;
 
-*/
+double input;
+double output;
 
+double setpoint = 0;
+double p = 20;
+double i = 5;
+double d = 1;
 
+int maxSpeed = 60;
 
 //H-bridge
 #define a1a 5
@@ -29,6 +35,13 @@ void setup() {
   pinMode(b1b, OUTPUT);
 
   calibration();
+
+  myController.begin(&input, &output, &setpoint, p, i, d);
+  myController.setOutputLimits(-maxSpeed, maxSpeed);
+  //myController.setBias(255.0 / 2.0);
+  //myController.setWindUpLimits(-10, 10);
+
+  myController.start();
 }
 
 void calibration() {
@@ -113,10 +126,10 @@ void arrayRead() {
 }
 
 void moveMotors(int _a, int _b) {
-  analogWrite(a1a, _a);
-  analogWrite(a1b, 255 - _a);
-  analogWrite(b1a, _b);
-  analogWrite(b1b, 255 - _b);
+  analogWrite(a1b, 128 + _a);
+  analogWrite(a1a, 128 - _a);
+  analogWrite(b1a, 128 + _b);
+  analogWrite(b1b, 128 - _b);
 }
 
 int calculatePosition() {
@@ -144,14 +157,29 @@ int calculatePosition() {
 void loop() {
 
   arrayRead();
-  Serial.println(calculatePosition());
+  //Serial.println(calculatePosition());
 
-  
+  input = calculatePosition();
 
-  //moveMotors(128, 128);
+  myController.compute();
+
+  Serial.println(output);
+
+  if(output == 0)
+  {
+    moveMotors(maxSpeed, maxSpeed);
+  }
+  else if (output < 0)
+  {
+    moveMotors(maxSpeed, (maxSpeed + output));
+  }
+  else
+  {
+    moveMotors((maxSpeed - output), maxSpeed);
+  }
 
 #if DEBUG == 1
-  Serial.print(r_d1);
+    Serial.print(r_d1);
   Serial.print(" - ");
   Serial.print(r_d2);
   Serial.print(" - ");
