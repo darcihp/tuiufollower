@@ -1,14 +1,22 @@
 #include "ArduPID.h"
-
 ArduPID myController;
+
+#include "BluetoothSerial.h"
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
+
 
 double input;
 double output;
 
 double setpoint = 0;
-double p = 20;
-double i = 5;
-double d = 1;
+double p = 200;
+double i = 50;
+double d = 10;
 
 int maxSpeed = 60;
 
@@ -20,10 +28,12 @@ int maxSpeed = 60;
 
 #define DEBUG 2
 
-#define sensorOffset 300
+#define sensorOffset 600
 
 int r_d1, r_d2, r_d3, r_d4, r_d5, r_d6, r_d7, r_d8;
 int c_r_d1, c_r_d2, c_r_d3, c_r_d4, c_r_d5, c_r_d6, c_r_d7, c_r_d8;
+
+String message = "";
 
 void setup() {
 
@@ -42,6 +52,8 @@ void setup() {
   //myController.setWindUpLimits(-10, 10);
 
   myController.start();
+
+  SerialBT.begin("tuiufollower");
 }
 
 void calibration() {
@@ -163,23 +175,51 @@ void loop() {
 
   myController.compute();
 
-  Serial.println(output);
-
-  if(output == 0)
-  {
+  if (output == 0) {
     moveMotors(maxSpeed, maxSpeed);
-  }
-  else if (output < 0)
-  {
+  } else if (output < 0) {
     moveMotors(maxSpeed, (maxSpeed + output));
-  }
-  else
-  {
+  } else {
     moveMotors((maxSpeed - output), maxSpeed);
   }
 
+  if (SerialBT.available()) {
+    char incomingChar = SerialBT.read();
+    if (incomingChar != '\n') {
+      message += String(incomingChar);
+    } else {
+      message = "";
+    }
+  }
+  if (message == "p+") {
+    myController.stop();
+    p = p + 5;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+    Serial.println(p);
+  } else if (message == "p-") {
+    myController.stop();
+    p = p - 5;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+    Serial.println(p);
+  } else if (message == "i+") {
+    myController.stop();
+    i = i + 1;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+    Serial.println(i);
+  }
+  else if (message == "i-") {
+    myController.stop();
+    i = i - 1;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+    Serial.println(i);
+  }
+
 #if DEBUG == 1
-    Serial.print(r_d1);
+  Serial.print(r_d1);
   Serial.print(" - ");
   Serial.print(r_d2);
   Serial.print(" - ");
