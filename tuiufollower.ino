@@ -9,16 +9,20 @@ ArduPID myController;
 
 BluetoothSerial SerialBT;
 
+#include <ESP32Encoder.h>
+
+ESP32Encoder encoderD;
+ESP32Encoder encoderE;
 
 double input;
 double output;
 
 double setpoint = 0;
-double p = 200;
-double i = 50;
-double d = 10;
+double p = 45;
+double i = 15;
+double d = 30;
 
-int maxSpeed = 60;
+int maxSpeed = 65;
 
 //H-bridge
 #define a1a 5
@@ -26,9 +30,9 @@ int maxSpeed = 60;
 #define b1a 19
 #define b1b 18
 
-#define DEBUG 2
+#define DEBUG 0
 
-#define sensorOffset 600
+#define sensorOffset 100
 
 int r_d1, r_d2, r_d3, r_d4, r_d5, r_d6, r_d7, r_d8;
 int c_r_d1, c_r_d2, c_r_d3, c_r_d4, c_r_d5, c_r_d6, c_r_d7, c_r_d8;
@@ -36,6 +40,9 @@ int c_r_d1, c_r_d2, c_r_d3, c_r_d4, c_r_d5, c_r_d6, c_r_d7, c_r_d8;
 String message = "";
 
 void setup() {
+
+  encoderD.attachHalfQuad(2, 15);
+  encoderE.attachHalfQuad(16, 4);
 
   Serial.begin(115200);
 
@@ -66,7 +73,7 @@ void calibration() {
   c_r_d7 = 0;
   c_r_d8 = 0;
 
-  for (int i = 0; i < 100; i++) {
+  for (int i = 0; i < 99; i++) {
     arrayRead();
     c_r_d1 = c_r_d1 + r_d1;
     c_r_d2 = c_r_d2 + r_d2;
@@ -145,8 +152,59 @@ void moveMotors(int _a, int _b) {
 }
 
 int calculatePosition() {
-  int position = 0;
 
+  //TODO
+  //Aplicar média móvel para reduzir ruído
+  int position = 0;
+  r_d1 = map(r_d1, c_r_d1, 4095, 0, 1000);
+  if (r_d1 < 0) r_d1 = 0;
+  r_d2 = map(r_d2, c_r_d2, 4095, 0, 1000);
+  if (r_d2 < 0) r_d2 = 0;
+  r_d3 = map(r_d3, c_r_d3, 4095, 0, 1000);
+  if (r_d3 < 0) r_d3 = 0;
+  r_d4 = map(r_d4, c_r_d4, 4095, 0, 1000);
+  if (r_d4 < 0) r_d4 = 0;
+  r_d5 = map(r_d5, c_r_d5, 4095, 0, 1000);
+  if (r_d5 < 0) r_d5 = 0;
+  r_d6 = map(r_d6, c_r_d6, 4095, 0, 1000);
+  if (r_d6 < 0) r_d6 = 0;
+  r_d7 = map(r_d7, c_r_d7, 4095, 0, 1000);
+  if (r_d7 < 0) r_d7 = 0;
+  r_d8 = map(r_d8, c_r_d8, 4095, 0, 1000);
+  if (r_d8 < 0) r_d8 = 0;
+
+  r_d1 = r_d1 * (8);
+  r_d2 = r_d2 * (4);
+  r_d3 = r_d3 * (2);
+  r_d4 = r_d4 * (1);
+  r_d5 = r_d5 * (-1);
+  r_d6 = r_d6 * (-2);
+  r_d7 = r_d7 * (-4);
+  r_d8 = r_d8 * (-8);
+
+  position = r_d1 + r_d2 + r_d3 + r_d4 + r_d5 + r_d6 + r_d7 + r_d8;
+
+  //Serial.println(position);
+
+  /*
+  r_d2 = r_d2 - c_r_d2;
+  if (r_d2 < 0) r_d2 = 0;
+  r_d3 = r_d3 - c_r_d3;
+  if (r_d3 < 0) r_d3 = 0;
+  r_d4 = r_d4 - c_r_d4;
+  if (r_d4 < 0) r_d4 = 0;
+  r_d5 = r_d5 - c_r_d5;
+  if (r_d5 < 0) r_d5 = 0;
+  r_d6 = r_d6 - c_r_d6;
+  if (r_d6 < 0) r_d6 = 0;
+  r_d7 = r_d7 - c_r_d7;
+  if (r_d7 < 0) r_d7 = 0;
+  r_d8 = r_d8 - c_r_d8;
+  if (r_d8 < 0) r_d8 = 0;
+*/
+
+
+  /*
   if (r_d1 > c_r_d1)
     position = position + 8;
   if (r_d2 > c_r_d2)
@@ -163,6 +221,7 @@ int calculatePosition() {
     position = position - 4;
   if (r_d8 > c_r_d8)
     position = position - 8;
+  */
   return position;
 }
 
@@ -172,8 +231,10 @@ void loop() {
   //Serial.println(calculatePosition());
 
   input = calculatePosition();
+  SerialBT.println(input);
 
   myController.compute();
+
 
   if (output == 0) {
     moveMotors(maxSpeed, maxSpeed);
@@ -182,6 +243,7 @@ void loop() {
   } else {
     moveMotors((maxSpeed - output), maxSpeed);
   }
+
 
   if (SerialBT.available()) {
     char incomingChar = SerialBT.read();
@@ -196,45 +258,63 @@ void loop() {
     p = p + 5;
     myController.begin(&input, &output, &setpoint, p, i, d);
     myController.start();
-    Serial.println(p);
   } else if (message == "p-") {
     myController.stop();
     p = p - 5;
     myController.begin(&input, &output, &setpoint, p, i, d);
     myController.start();
-    Serial.println(p);
   } else if (message == "i+") {
     myController.stop();
     i = i + 1;
     myController.begin(&input, &output, &setpoint, p, i, d);
     myController.start();
-    Serial.println(i);
-  }
-  else if (message == "i-") {
+  } else if (message == "i-") {
     myController.stop();
     i = i - 1;
     myController.begin(&input, &output, &setpoint, p, i, d);
     myController.start();
-    Serial.println(i);
+  } else if (message == "d+") {
+    myController.stop();
+    d = d + 1;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+  } else if (message == "d-") {
+    myController.stop();
+    d = d - 1;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+  } else if (message == "s+") {
+    myController.stop();
+    maxSpeed = maxSpeed + 1;
+    myController.setOutputLimits(-maxSpeed, maxSpeed);
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+  } else if (message == "s-") {
+    myController.stop();
+    maxSpeed = maxSpeed - 1;
+    myController.setOutputLimits(-maxSpeed, maxSpeed);
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
   }
+
 
 #if DEBUG == 1
   Serial.print(r_d1);
-  Serial.print(" - ");
+  Serial.print(" | ");
   Serial.print(r_d2);
-  Serial.print(" - ");
+  Serial.print(" | ");
   Serial.print(r_d3);
-  Serial.print(" - ");
+  Serial.print(" | ");
   Serial.print(r_d4);
-  Serial.print(" - ");
+  Serial.print(" | ");
   Serial.print(r_d5);
-  Serial.print(" - ");
+  Serial.print(" | ");
   Serial.print(r_d6);
-  Serial.print(" - ");
+  Serial.print(" | ");
   Serial.print(r_d7);
-  Serial.print(" - ");
+  Serial.print(" | ");
   Serial.print(r_d8);
-  Serial.println(" - ");
+  Serial.println(" | ");
 
 #endif
 }
