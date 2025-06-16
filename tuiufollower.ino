@@ -14,8 +14,12 @@ BluetoothSerial SerialBT;
 ESP32Encoder encoderD;
 ESP32Encoder encoderE;
 
+#include "MovingAverage.h"
+MovingAverage<uint8_t, 64> filter;
+
 double input;
 double output;
+double temp_input;
 
 double setpoint = 0;
 double p = 45;
@@ -32,17 +36,20 @@ int maxSpeed = 65;
 
 #define DEBUG 0
 
-#define sensorOffset 100
+#define sensorOffset 0
 
 int r_d1, r_d2, r_d3, r_d4, r_d5, r_d6, r_d7, r_d8;
 int c_r_d1, c_r_d2, c_r_d3, c_r_d4, c_r_d5, c_r_d6, c_r_d7, c_r_d8;
 
 String message = "";
 
+int encoderEValue;
+int encoderDValue;
+
 void setup() {
 
+  encoderE.attachHalfQuad(4, 16);
   encoderD.attachHalfQuad(2, 15);
-  encoderE.attachHalfQuad(16, 4);
 
   Serial.begin(115200);
 
@@ -225,13 +232,25 @@ int calculatePosition() {
   return position;
 }
 
+void encoderRead() {
+  encoderEValue = encoderE.getCount();
+  delay(1);
+  encoderDValue = encoderD.getCount();
+  delay(1);
+}
+
 void loop() {
 
   arrayRead();
-  //Serial.println(calculatePosition());
+  encoderRead();
+
+  //Serial.println(String((int32_t)encoderEValue) + " | " + String((int32_t)encoderDValue));
+
+  //temp_input = calculatePosition();
+  //input = filter.add(temp_input);
 
   input = calculatePosition();
-  SerialBT.println(input);
+  SerialBT.println(String((int32_t)encoderEValue) + " | " + String((int32_t)encoderDValue));
 
   myController.compute();
 
