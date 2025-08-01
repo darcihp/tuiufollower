@@ -1,3 +1,9 @@
+//Type 0 - Follower
+//Type 1 - Odometry
+#define TYPE 2
+
+#if TYPE == 0
+
 #include "ArduPID.h"
 ArduPID myController;
 
@@ -14,8 +20,8 @@ BluetoothSerial SerialBT;
 ESP32Encoder encoderD;
 ESP32Encoder encoderE;
 
-#include "MovingAverage.h"
-MovingAverage<uint8_t, 64> filter;
+//#include "MovingAverage.h"
+//MovingAverage<uint8_t, 64> filter;
 
 double input;
 double output;
@@ -45,6 +51,9 @@ String message = "";
 
 int encoderEValue;
 int encoderDValue;
+
+void calibration(void);
+void arrayRead(void);
 
 void setup() {
 
@@ -337,3 +346,207 @@ void loop() {
 
 #endif
 }
+
+#endif
+#if TYPE == 1
+
+#include "ArduPID.h"
+ArduPID myController;
+
+/*
+#include "BluetoothSerial.h"
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+BluetoothSerial SerialBT;
+*/
+
+#include <ESP32Encoder.h>
+
+ESP32Encoder encoderD;
+ESP32Encoder encoderE;
+
+double input;
+double output;
+double temp_input;
+
+double setpoint = 0;
+double p = 45;
+double i = 15;
+double d = 30;
+
+int maxSpeed = 65;
+
+//H-bridge
+#define a1a 5
+#define a1b 17
+#define b1a 19
+#define b1b 18
+
+#define DEBUG 0
+
+#define sensorOffset 0
+
+int r_d1, r_d2, r_d3, r_d4, r_d5, r_d6, r_d7, r_d8;
+int c_r_d1, c_r_d2, c_r_d3, c_r_d4, c_r_d5, c_r_d6, c_r_d7, c_r_d8;
+
+String message = "";
+
+int encoderEValue;
+int encoderDValue;
+
+void calibration(void);
+void arrayRead(void);
+
+void setup() {
+
+  encoderE.attachHalfQuad(4, 16);
+  encoderD.attachHalfQuad(2, 15);
+
+  Serial.begin(115200);
+
+  pinMode(a1a, OUTPUT);
+  pinMode(a1b, OUTPUT);
+  pinMode(b1a, OUTPUT);
+  pinMode(b1b, OUTPUT);
+
+
+  myController.begin(&input, &output, &setpoint, p, i, d);
+  myController.setOutputLimits(-maxSpeed, maxSpeed);
+  //myController.setBias(255.0 / 2.0);
+  //myController.setWindUpLimits(-10, 10);
+  myController.start();
+
+  //SerialBT.begin("tuiufollower_odometry");
+}
+
+void moveMotors(int _a, int _b) {
+  analogWrite(a1b, 128 + _a);
+  analogWrite(a1a, 128 - _a);
+  analogWrite(b1a, 128 + _b);
+  analogWrite(b1b, 128 - _b);
+}
+
+void encoderRead() {
+  encoderEValue = encoderE.getCount();
+  delay(1);
+  encoderDValue = encoderD.getCount();
+  delay(1);
+}
+
+void loop() {
+
+  moveMotors(60, 60);
+  encoderRead();
+  Serial.println(String((int32_t)encoderEValue) + " | " + String((int32_t)encoderDValue));
+
+  //SerialBT.println(String((int32_t)encoderEValue) + " | " + String((int32_t)encoderDValue));
+
+  //myController.compute();
+
+  /*
+  if (SerialBT.available()) {
+    char incomingChar = SerialBT.read();
+    if (incomingChar != '\n') {
+      message += String(incomingChar);
+    } else {
+      message = "";
+    }
+  }
+  if (message == "p+") {
+    myController.stop();
+    p = p + 5;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+  } else if (message == "p-") {
+    myController.stop();
+    p = p - 5;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+  } else if (message == "i+") {
+    myController.stop();
+    i = i + 1;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+  } else if (message == "i-") {
+    myController.stop();
+    i = i - 1;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+  } else if (message == "d+") {
+    myController.stop();
+    d = d + 1;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+  } else if (message == "d-") {
+    myController.stop();
+    d = d - 1;
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+  } else if (message == "s+") {
+    myController.stop();
+    maxSpeed = maxSpeed + 1;
+    myController.setOutputLimits(-maxSpeed, maxSpeed);
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+  } else if (message == "s-") {
+    myController.stop();
+    maxSpeed = maxSpeed - 1;
+    myController.setOutputLimits(-maxSpeed, maxSpeed);
+    myController.begin(&input, &output, &setpoint, p, i, d);
+    myController.start();
+  }
+  */
+}
+
+#endif
+
+#if TYPE == 2
+
+#include <Arduino.h>
+
+#if !defined( ESP32 )
+	#error This code is intended to run on the ESP32 platform! Please check your Tools->Board setting.
+#endif
+
+#define _TIMERINTERRUPT_LOGLEVEL_ 4
+#include "ESP32_New_TimerInterrupt.h"
+
+#define PIN_D19             19        // Pin D19 mapped to pin GPIO9 of ESP32
+
+bool IRAM_ATTR TimerHandler0(void * timerNo)
+{
+	static bool toggle0 = false;
+	digitalWrite(PIN_D19, toggle0);
+	toggle0 = !toggle0;
+
+	return true;
+}
+
+#define TIMER0_INTERVAL_MS 500
+
+ESP32Timer ITimer0(0);
+
+void setup()
+{
+	pinMode(PIN_D19, OUTPUT);
+
+	Serial.begin(115200);
+
+	if (ITimer0.attachInterruptInterval(TIMER0_INTERVAL_MS * 1000, TimerHandler0))
+	{
+		Serial.print(F("Starting  ITimer0 OK, millis() = "));
+		Serial.println(millis());
+	}
+	else
+		Serial.println(F("Can't set ITimer0. Select another freq. or timer"));
+
+	Serial.flush();
+}
+
+void loop()
+{
+
+}
+
+#endif
