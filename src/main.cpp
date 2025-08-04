@@ -1,7 +1,6 @@
 //Type 0 - Follower
 //Type 1 - Odometry
-#define TYPE 2
-
+#define TYPE 1
 #if TYPE == 0
 
 #include "ArduPID.h"
@@ -348,34 +347,19 @@ void loop() {
 }
 
 #endif
+
 #if TYPE == 1
 
-#include "ArduPID.h"
-ArduPID myController;
+#include <Arduino.h>
 
-/*
-#include "BluetoothSerial.h"
-#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
-#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
-#endif
-BluetoothSerial SerialBT;
-*/
+#define _TIMERINTERRUPT_LOGLEVEL_ 4
+#include "ESP32_New_TimerInterrupt.h"
+#define TIMER0_INTERVAL_MS 100
+ESP32Timer ITimer0(0);
 
 #include <ESP32Encoder.h>
-
 ESP32Encoder encoderD;
 ESP32Encoder encoderE;
-
-double input;
-double output;
-double temp_input;
-
-double setpoint = 0;
-double p = 45;
-double i = 15;
-double d = 30;
-
-int maxSpeed = 65;
 
 //H-bridge
 #define a1a 5
@@ -383,25 +367,10 @@ int maxSpeed = 65;
 #define b1a 19
 #define b1b 18
 
-#define DEBUG 0
+bool IRAM_ATTR TimerHandler0(void * timerNo);
 
-#define sensorOffset 0
-
-int r_d1, r_d2, r_d3, r_d4, r_d5, r_d6, r_d7, r_d8;
-int c_r_d1, c_r_d2, c_r_d3, c_r_d4, c_r_d5, c_r_d6, c_r_d7, c_r_d8;
-
-String message = "";
-
-int encoderEValue;
-int encoderDValue;
-
-void calibration(void);
-void arrayRead(void);
 
 void setup() {
-
-  encoderE.attachHalfQuad(4, 16);
-  encoderD.attachHalfQuad(2, 15);
 
   Serial.begin(115200);
 
@@ -409,94 +378,45 @@ void setup() {
   pinMode(a1b, OUTPUT);
   pinMode(b1a, OUTPUT);
   pinMode(b1b, OUTPUT);
+  
+  ITimer0.attachInterruptInterval(TIMER0_INTERVAL_MS * 1000, TimerHandler0);
+  //attachInterrupt(digitalPinToInterrupt(encoder_l), count_encoder_l, RISING);
+  //attachInterrupt(digitalPinToInterrupt(encoder_r), count_encoder_r, RISING);
 
+  ESP32Encoder::useInternalWeakPullResistors = puType::up;
 
-  myController.begin(&input, &output, &setpoint, p, i, d);
-  myController.setOutputLimits(-maxSpeed, maxSpeed);
-  //myController.setBias(255.0 / 2.0);
-  //myController.setWindUpLimits(-10, 10);
-  myController.start();
-
-  //SerialBT.begin("tuiufollower_odometry");
+  encoderE.attachFullQuad(4, 16);
+  encoderD.attachFullQuad(2, 15);
+  encoderE.setFilter(1023);
+  encoderD.setFilter(1023);
+  encoderE.setCount (0);
+  encoderD.setCount (0); 
 }
+
+bool IRAM_ATTR TimerHandler0(void * timerNo)
+{
+  long encoderD_position = encoderD.getCount();
+  long encoderE_position = encoderE.getCount();
+
+  Serial.println(String((int32_t)encoderE_position) + " | " + String((int32_t)encoderD_position));
+
+  //encoderD.clearCount();
+  //encoderE.clearCount();
+
+	return true;
+}
+
 
 void moveMotors(int _a, int _b) {
-  analogWrite(a1b, 128 + _a);
-  analogWrite(a1a, 128 - _a);
-  analogWrite(b1a, 128 + _b);
-  analogWrite(b1b, 128 - _b);
+  analogWrite(a1b, 128 + _a);delay(1);
+  analogWrite(a1a, 128 - _a);delay(1);
+  analogWrite(b1a, 128 + _b);delay(1);
+  analogWrite(b1b, 128 - _b);delay(1);
 }
 
-void encoderRead() {
-  encoderEValue = encoderE.getCount();
-  delay(1);
-  encoderDValue = encoderD.getCount();
-  delay(1);
-}
-
-void loop() {
-
-  moveMotors(60, 60);
-  encoderRead();
-  Serial.println(String((int32_t)encoderEValue) + " | " + String((int32_t)encoderDValue));
-
-  //SerialBT.println(String((int32_t)encoderEValue) + " | " + String((int32_t)encoderDValue));
-
-  //myController.compute();
-
-  /*
-  if (SerialBT.available()) {
-    char incomingChar = SerialBT.read();
-    if (incomingChar != '\n') {
-      message += String(incomingChar);
-    } else {
-      message = "";
-    }
-  }
-  if (message == "p+") {
-    myController.stop();
-    p = p + 5;
-    myController.begin(&input, &output, &setpoint, p, i, d);
-    myController.start();
-  } else if (message == "p-") {
-    myController.stop();
-    p = p - 5;
-    myController.begin(&input, &output, &setpoint, p, i, d);
-    myController.start();
-  } else if (message == "i+") {
-    myController.stop();
-    i = i + 1;
-    myController.begin(&input, &output, &setpoint, p, i, d);
-    myController.start();
-  } else if (message == "i-") {
-    myController.stop();
-    i = i - 1;
-    myController.begin(&input, &output, &setpoint, p, i, d);
-    myController.start();
-  } else if (message == "d+") {
-    myController.stop();
-    d = d + 1;
-    myController.begin(&input, &output, &setpoint, p, i, d);
-    myController.start();
-  } else if (message == "d-") {
-    myController.stop();
-    d = d - 1;
-    myController.begin(&input, &output, &setpoint, p, i, d);
-    myController.start();
-  } else if (message == "s+") {
-    myController.stop();
-    maxSpeed = maxSpeed + 1;
-    myController.setOutputLimits(-maxSpeed, maxSpeed);
-    myController.begin(&input, &output, &setpoint, p, i, d);
-    myController.start();
-  } else if (message == "s-") {
-    myController.stop();
-    maxSpeed = maxSpeed - 1;
-    myController.setOutputLimits(-maxSpeed, maxSpeed);
-    myController.begin(&input, &output, &setpoint, p, i, d);
-    myController.start();
-  }
-  */
+void loop()
+{
+  moveMotors(60,60);
 }
 
 #endif
