@@ -597,6 +597,9 @@ void loop()
 #include <Arduino.h>
 #include <FastPID.h>
 
+#include <esp_now.h>
+#include <WiFi.h>
+
 #define _TIMERINTERRUPT_LOGLEVEL_ 4
 #include "ESP32_New_TimerInterrupt.h"
 #define TIMER0_INTERVAL_MS 100
@@ -617,7 +620,7 @@ long ticks_encoder_r;
 
 float wheel_radius_l = 0.034;
 float wheel_radius_r = 0.034;
-float baseline = 0.180;
+float baseline = 0.150;
 
 float interruption_time = 100.0;
 //360degrees/ 60ppr
@@ -652,10 +655,40 @@ int output_bits_r = 8;
 bool output_signed_r = true;
 FastPID myPID_r(p_r, i_r, d_r, hz_r, output_bits_r, output_signed_r);
 
-//QuickPID myPID_r(&input_r, &output_r, &setpoint_r);
+float last_target;
+
+bool connection;
+typedef struct struct_message {
+  int vrx;
+  int vry;
+  bool btn_1;
+  bool btn_2;
+} struct_message;
+struct_message myData;
 
 bool IRAM_ATTR TimerHandler0(void * timerNo);
 void moveMotors(int _a, int _b);
+
+void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
+  connection = true;
+  memcpy(&myData, incomingData, sizeof(myData)); 
+  
+  Serial.print("Bytes received: ");
+  Serial.println(len);
+  Serial.print("vrx: ");
+  Serial.println(myData.vrx);
+  
+  Serial.print("vry: ");
+  Serial.println(myData.vry);
+  
+  Serial.print("btn_1: ");
+  Serial.println(myData.btn_1);
+  Serial.print("btn_2: ");
+  Serial.println(myData.btn_2);
+  Serial.println();
+
+}
+
 
 void setup() {
 
@@ -666,6 +699,16 @@ void setup() {
   pinMode(b1a, OUTPUT);
   pinMode(b1b, OUTPUT);
   
+  WiFi.mode(WIFI_STA);
+
+  // Init ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  esp_now_register_recv_cb(OnDataRecv);
+
   ITimer0.attachInterruptInterval(TIMER0_INTERVAL_MS * 1000, TimerHandler0);
   //attachInterrupt(digitalPinToInterrupt(encoder_l), count_encoder_l, RISING);
   //attachInterrupt(digitalPinToInterrupt(encoder_r), count_encoder_r, RISING);
@@ -679,11 +722,6 @@ void setup() {
   encoder_l.setCount (0);
   encoder_r.setCount (0);
   
-  //myPID_l.SetTunings(p_l, i_l, d_l);
-  //myPID_l.Initialize();
-
-  //myPID_r.SetTunings(p_r, i_r, d_r);
-  //myPID_r.SetMode(myPID_r.Control::manual);
   myPID_l.setOutputRange(-100, 100);
   myPID_r.setOutputRange(-100, 100);
 }
@@ -765,6 +803,7 @@ void moveMotors(int _a, int _b) {
   analogWrite(b1b, 128 - _b);delay(1);
 }
 
+
 void loop()
 {
   int speed_l = 20;
@@ -774,61 +813,67 @@ void loop()
   {
     setpoint_l = speed_l;
     setpoint_r = speed_r;
+    last_target = 0.5;
   }
-  if(last_x >= 0.5 && state_machine == 0)
+  if(last_x >= last_target && state_machine == 0)
   {
-    
     setpoint_l = -speed_l;
     setpoint_r = speed_r;
     state_machine = 1;
+    last_target = last_theta + 1.57;
   }
 
-  if(last_theta >= 1.57 && state_machine == 1)
+  if(last_theta >= last_target && state_machine == 1)
   {
-    myPID_l.clear();
-    myPID_r.clear();
     setpoint_l = speed_l;
     setpoint_r = speed_r;
     state_machine = 3;
+    last_target = last_y + 0.5;
   }
 
-  if(last_y >= 0.5 && state_machine == 3)
+  if(last_y >= last_target && state_machine == 3)
   {
     setpoint_l = -speed_l;
     setpoint_r = speed_r;
     state_machine = 4;
+    last_target = last_theta + 1.57;
   }
 
   //if(last_theta >= 3.14 && state_machine == 4)
-  if(last_theta >= 3.0 && state_machine == 4)
+  if(last_theta >= last_target && state_machine == 4)
   {
     setpoint_l = speed_l;
     setpoint_r = speed_r;
     state_machine = 5;
+    last_target = last_x - 0.5;
   }
-
+  //if(last_x <= last_target && state_machine == 5)
   if(last_x <= 0 && state_machine == 5)
   {
     setpoint_l = -speed_l;
     setpoint_r = speed_r;
     state_machine = 6;
+    last_target = last_theta + 1.57;
   }
 
-  if(last_theta >= 4.71 && state_machine == 6)
+  if(last_theta >= last_target && state_machine == 6)
   {
     setpoint_l = speed_l;
     setpoint_r = speed_r;
     state_machine = 7;
+    last_target = last_y - 0.5;
   }
 
-   if(last_y <= 0 && state_machine == 7)
+  //if(last_y <= last_target && state_machine == 7)
+  if(last_y <= 0 && state_machine == 7)
   {
     setpoint_l = -speed_l;
     setpoint_r = speed_r;
     state_machine = 8;
+    last_target = last_theta + 1.57;
   }
 
-  if(last_theta >= 6.28 && state_machine == 8)
+  if(last_theta >= last_target && state_machine == 8)
   {
     setpoint_l = 0;
     setpoint_r = 0;
