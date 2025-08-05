@@ -1,6 +1,6 @@
 //Type 0 - Follower
 //Type 1 - Odometry
-#define TYPE 1
+#define TYPE 3
 #if TYPE == 0
 
 #include "ArduPID.h"
@@ -358,8 +358,8 @@ void loop() {
 ESP32Timer ITimer0(0);
 
 #include <ESP32Encoder.h>
-ESP32Encoder encoderD;
-ESP32Encoder encoderE;
+ESP32Encoder encoder_r;
+ESP32Encoder encoder_l;
 
 //H-bridge
 #define a1a 5
@@ -367,8 +367,25 @@ ESP32Encoder encoderE;
 #define b1a 19
 #define b1b 18
 
-bool IRAM_ATTR TimerHandler0(void * timerNo);
+long ticks_encoder_l;
+long ticks_encoder_r;
 
+float wheel_radius_l = 0.034;
+float wheel_radius_r = 0.034;
+float baseline = 0.087;
+
+float interruption_time = 100.0;
+//360degrees/ 60ppr
+const float speed_constant = 6;
+
+float last_x = 0;
+float last_y = 0;
+float last_theta = 0;
+
+int state_machine = 0;
+
+bool IRAM_ATTR TimerHandler0(void * timerNo);
+void moveMotors(int _a, int _b);
 
 void setup() {
 
@@ -385,23 +402,75 @@ void setup() {
 
   ESP32Encoder::useInternalWeakPullResistors = puType::up;
 
-  encoderE.attachFullQuad(4, 16);
-  encoderD.attachFullQuad(2, 15);
-  encoderE.setFilter(1023);
-  encoderD.setFilter(1023);
-  encoderE.setCount (0);
-  encoderD.setCount (0); 
+  encoder_l.attachFullQuad(4, 16);
+  encoder_r.attachFullQuad(2, 15);
+  encoder_l.setFilter(1023);
+  encoder_r.setFilter(1023);
+  encoder_l.setCount (0);
+  encoder_r.setCount (0); 
 }
 
 bool IRAM_ATTR TimerHandler0(void * timerNo)
 {
-  long encoderD_position = encoderD.getCount();
-  long encoderE_position = encoderE.getCount();
+  ticks_encoder_l = encoder_l.getCount();
+  ticks_encoder_r = encoder_r.getCount();
+  
+  //°
+  float last_degrees_l = ticks_encoder_l * speed_constant;  
+  float last_degrees_r = ticks_encoder_r * speed_constant;
+  //°/s
+  float last_speed_deg_s_l = last_degrees_l / (interruption_time/1000);
+  float last_speed_deg_s_r = last_degrees_r / (interruption_time/1000);
+  //rad/s
+  float last_speed_rad_s_l = last_speed_deg_s_l * 0.017453292519943;
+  float last_speed_rad_s_r = last_speed_deg_s_r * 0.017453292519943;
 
-  Serial.println(String((int32_t)encoderE_position) + " | " + String((int32_t)encoderD_position));
+  /*
+  Serial.print(">last_speed_deg_s_l: ");
+  Serial.println(last_speed_deg_s_l);
+  Serial.print(">last_speed_deg_s_r: ");
+  Serial.println(last_speed_deg_s_r);
+  Serial.print(">last_speed_rad_s_l: ");
+  Serial.println(last_speed_rad_s_l);
+  Serial.print(">last_speed_rad_s_r: ");
+  Serial.println(last_speed_rad_s_r);
+  */
+  
+  encoder_l.clearCount();
+  encoder_r.clearCount();
 
-  //encoderD.clearCount();
-  //encoderE.clearCount();
+  //wheel velocity l
+  float vl = wheel_radius_l * last_speed_rad_s_l;
+  //wheel velocity r
+  float vr = wheel_radius_r * last_speed_rad_s_r;
+
+  Serial.print("vl: ");
+  Serial.println(vl);
+  Serial.print("vr: ");
+  Serial.println(vr);
+
+  //float x = ((vl/2)*cos(last_theta)) +  ((vr/2)*cos(last_theta));
+  float x = (((vl/2)*cos(last_theta)) +  ((vr/2)*cos(last_theta))) * (interruption_time/1000);
+  float y = (((vl/2)*sin(last_theta)) +  ((vr/2)*sin(last_theta))) * (interruption_time/1000);
+  //float theta = (-(vl/baseline) + (vr/baseline)) * (interruption_time/1000);
+  float theta = ((vr - vl)/baseline) * (interruption_time/1000);
+  //float theta = 0;
+
+  last_x += x;
+  last_y += y;
+  last_theta += theta;
+  
+  Serial.print(">last_x:");
+  Serial.println(last_x);
+
+  Serial.print(">last_y:");
+  Serial.println(last_y);
+
+  Serial.print(">last_theta:");
+  Serial.println(last_theta);
+
+  //Serial.println(String((int32_t)ticks_encoder_r) + " | " + String((int32_t)ticks_encoder_l));
+
 
 	return true;
 }
@@ -416,7 +485,59 @@ void moveMotors(int _a, int _b) {
 
 void loop()
 {
-  moveMotors(60,60);
+  int speed_r = 65;
+  int speed_l = 60;
+
+  if (state_machine == 0)
+  {
+    moveMotors(speed_l, speed_r);
+  }
+   if(last_x >= 0.5 && state_machine == 0)
+  {
+    moveMotors(-speed_l, speed_r);
+    state_machine = 1;
+  }
+
+  if(last_theta >= 1.57 && state_machine == 1)
+  {
+    moveMotors(speed_l, speed_r);
+    state_machine = 3;
+  }
+
+  if(last_y >= 0.5 && state_machine == 3)
+  {
+    moveMotors(-speed_l, speed_r);
+    state_machine = 4;
+  }
+
+  if(last_theta >= 3.14 && state_machine == 4)
+  {
+    moveMotors(speed_l, speed_r);
+    state_machine = 5;
+  }
+
+  if(last_x <= 0 && state_machine == 5)
+  {
+    moveMotors(-speed_l, speed_r);
+    state_machine = 6;
+  }
+
+  if(last_theta >= 4.71 && state_machine == 6)
+  {
+    moveMotors(speed_l, speed_r);
+    state_machine = 7;
+  }
+
+   if(last_y <= 0 && state_machine == 7)
+  {
+    moveMotors(-speed_l, speed_r);
+    state_machine = 8;
+  }
+
+  if(last_theta >= 6.28 && state_machine == 8)
+  {
+    moveMotors(0, 0);
+  }
 }
 
 #endif
@@ -468,5 +589,270 @@ void loop()
 {
 
 }
+
+#endif
+
+#if TYPE == 3
+
+#include <Arduino.h>
+#include <FastPID.h>
+
+#define _TIMERINTERRUPT_LOGLEVEL_ 4
+#include "ESP32_New_TimerInterrupt.h"
+#define TIMER0_INTERVAL_MS 100
+ESP32Timer ITimer0(0);
+
+#include <ESP32Encoder.h>
+ESP32Encoder encoder_r;
+ESP32Encoder encoder_l;
+
+//H-bridge
+#define a1a 5
+#define a1b 17
+#define b1a 19
+#define b1b 18
+
+long ticks_encoder_l;
+long ticks_encoder_r;
+
+float wheel_radius_l = 0.034;
+float wheel_radius_r = 0.034;
+float baseline = 0.180;
+
+float interruption_time = 100.0;
+//360degrees/ 60ppr
+const float speed_constant = 6;
+
+float last_x = 0;
+float last_y = 0;
+float last_theta = 0;
+
+int state_machine = 0;
+
+float input_l;
+float output_l;
+float setpoint_l = 10;
+float p_l = 5;
+float i_l = 2;
+float d_l = 0.2;
+float hz_l = 100;
+int output_bits_l = 8;
+bool output_signed_l = true;
+
+FastPID myPID_l(p_l, i_l, d_l, hz_l, output_bits_l, output_signed_l);
+
+float input_r;
+float output_r;
+float setpoint_r = 10;
+float p_r = 5;
+float i_r = 2;
+float d_r = 0.2;
+float hz_r = 100;
+int output_bits_r = 8;
+bool output_signed_r = true;
+FastPID myPID_r(p_r, i_r, d_r, hz_r, output_bits_r, output_signed_r);
+
+//QuickPID myPID_r(&input_r, &output_r, &setpoint_r);
+
+bool IRAM_ATTR TimerHandler0(void * timerNo);
+void moveMotors(int _a, int _b);
+
+void setup() {
+
+  Serial.begin(115200);
+
+  pinMode(a1a, OUTPUT);
+  pinMode(a1b, OUTPUT);
+  pinMode(b1a, OUTPUT);
+  pinMode(b1b, OUTPUT);
+  
+  ITimer0.attachInterruptInterval(TIMER0_INTERVAL_MS * 1000, TimerHandler0);
+  //attachInterrupt(digitalPinToInterrupt(encoder_l), count_encoder_l, RISING);
+  //attachInterrupt(digitalPinToInterrupt(encoder_r), count_encoder_r, RISING);
+
+  ESP32Encoder::useInternalWeakPullResistors = puType::up;
+
+  encoder_l.attachFullQuad(4, 16);
+  encoder_r.attachFullQuad(2, 15);
+  encoder_l.setFilter(1023);
+  encoder_r.setFilter(1023);
+  encoder_l.setCount (0);
+  encoder_r.setCount (0);
+  
+  //myPID_l.SetTunings(p_l, i_l, d_l);
+  //myPID_l.Initialize();
+
+  //myPID_r.SetTunings(p_r, i_r, d_r);
+  //myPID_r.SetMode(myPID_r.Control::manual);
+  myPID_l.setOutputRange(-100, 100);
+  myPID_r.setOutputRange(-100, 100);
+}
+
+bool IRAM_ATTR TimerHandler0(void * timerNo)
+{
+  ticks_encoder_l = encoder_l.getCount();
+  ticks_encoder_r = encoder_r.getCount();
+  
+  //°
+  float last_degrees_l = ticks_encoder_l * speed_constant;  
+  float last_degrees_r = ticks_encoder_r * speed_constant;
+  //°/s
+  float last_speed_deg_s_l = last_degrees_l / (interruption_time/1000);
+  float last_speed_deg_s_r = last_degrees_r / (interruption_time/1000);
+  //rad/s
+  float last_speed_rad_s_l = last_speed_deg_s_l * 0.017453292519943;
+  float last_speed_rad_s_r = last_speed_deg_s_r * 0.017453292519943;
+
+  /*
+  Serial.print(">last_speed_deg_s_l: ");
+  Serial.println(last_speed_deg_s_l);
+  Serial.print(">last_speed_deg_s_r: ");
+  Serial.println(last_speed_deg_s_r);
+  Serial.print(">last_speed_rad_s_l: ");
+  Serial.println(last_speed_rad_s_l);
+  Serial.print(">last_speed_rad_s_r: ");
+  Serial.println(last_speed_rad_s_r);
+  */
+  
+  encoder_l.clearCount();
+  encoder_r.clearCount();
+
+  //wheel velocity l
+  float vl = wheel_radius_l * last_speed_rad_s_l;
+  //wheel velocity r
+  float vr = wheel_radius_r * last_speed_rad_s_r;
+
+  /*
+  Serial.print("vl: ");
+  Serial.println(vl);
+  Serial.print("vr: ");
+  Serial.println(vr);
+  */
+
+  //float x = ((vl/2)*cos(last_theta)) +  ((vr/2)*cos(last_theta));
+  float x = (((vl/2)*cos(last_theta)) +  ((vr/2)*cos(last_theta))) * (interruption_time/1000);
+  float y = (((vl/2)*sin(last_theta)) +  ((vr/2)*sin(last_theta))) * (interruption_time/1000);
+  //float theta = (-(vl/baseline) + (vr/baseline)) * (interruption_time/1000);
+  float theta = ((vr - vl)/baseline) * (interruption_time/1000);
+  //float theta = 0;
+
+  last_x += x;
+  last_y += y;
+  last_theta += theta;
+  
+  /*
+  Serial.print(">last_x:");
+  Serial.println(last_x);
+
+  Serial.print(">last_y:");
+  Serial.println(last_y);
+
+  Serial.print(">last_theta:");
+  Serial.println(last_theta);
+  */
+
+  //Serial.println(String((int32_t)ticks_encoder_r) + " | " + String((int32_t)ticks_encoder_l));
+
+
+	return true;
+}
+
+
+void moveMotors(int _a, int _b) {
+  analogWrite(a1b, 128 + _a);delay(1);
+  analogWrite(a1a, 128 - _a);delay(1);
+  analogWrite(b1a, 128 + _b);delay(1);
+  analogWrite(b1b, 128 - _b);delay(1);
+}
+
+void loop()
+{
+  int speed_l = 20;
+  int speed_r = 20;
+  
+  if (state_machine == 0)
+  {
+    setpoint_l = speed_l;
+    setpoint_r = speed_r;
+  }
+  if(last_x >= 0.5 && state_machine == 0)
+  {
+    
+    setpoint_l = -speed_l;
+    setpoint_r = speed_r;
+    state_machine = 1;
+  }
+
+  if(last_theta >= 1.57 && state_machine == 1)
+  {
+    myPID_l.clear();
+    myPID_r.clear();
+    setpoint_l = speed_l;
+    setpoint_r = speed_r;
+    state_machine = 3;
+  }
+
+  if(last_y >= 0.5 && state_machine == 3)
+  {
+    setpoint_l = -speed_l;
+    setpoint_r = speed_r;
+    state_machine = 4;
+  }
+
+  //if(last_theta >= 3.14 && state_machine == 4)
+  if(last_theta >= 3.0 && state_machine == 4)
+  {
+    setpoint_l = speed_l;
+    setpoint_r = speed_r;
+    state_machine = 5;
+  }
+
+  if(last_x <= 0 && state_machine == 5)
+  {
+    setpoint_l = -speed_l;
+    setpoint_r = speed_r;
+    state_machine = 6;
+  }
+
+  if(last_theta >= 4.71 && state_machine == 6)
+  {
+    setpoint_l = speed_l;
+    setpoint_r = speed_r;
+    state_machine = 7;
+  }
+
+   if(last_y <= 0 && state_machine == 7)
+  {
+    setpoint_l = -speed_l;
+    setpoint_r = speed_r;
+    state_machine = 8;
+  }
+
+  if(last_theta >= 6.28 && state_machine == 8)
+  {
+    setpoint_l = 0;
+    setpoint_r = 0;
+    state_machine = 9;
+  }
+
+  input_l = ticks_encoder_l;
+  input_r = ticks_encoder_r;
+  output_l = myPID_l.step(setpoint_l, input_l);
+  output_r = myPID_r.step(setpoint_r, input_r);
+  
+  if(state_machine == 9)
+    moveMotors(0, 0);
+  else
+    moveMotors(output_l, output_r);
+
+  /*
+  Serial.print(">output_l:");
+  Serial.println(output_l);
+
+  Serial.print(">output_r:");
+  Serial.println(output_r);
+  */
+}
+
 
 #endif
