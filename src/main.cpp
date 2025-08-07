@@ -659,10 +659,15 @@ float last_target;
 
 bool connection;
 typedef struct struct_message {
+  //char a[32];
   int vrx;
   int vry;
-  bool btn_1;
-  bool btn_2;
+  bool btn_b_l;
+  bool btn_b_r;
+  bool btn_r_l;
+  bool btn_r_r;
+  //float c;
+  //bool d;
 } struct_message;
 struct_message myData;
 
@@ -673,19 +678,75 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
   connection = true;
   memcpy(&myData, incomingData, sizeof(myData)); 
   
+  int max_speed = 50;
+
+  if (myData.btn_b_l == 1)
+  {
+    moveMotors(max_speed, max_speed);
+  }
+  else if (myData.btn_b_r == 1)
+  {
+    moveMotors(-max_speed, -max_speed);
+  }
+  else if (myData.btn_r_l == 1)
+  {
+    moveMotors(-max_speed, max_speed);
+  }
+  else if (myData.btn_r_r == 1)
+  {
+    moveMotors(max_speed, -max_speed);
+  }
+  else
+  {
+    int m_vrx = map(myData.vrx, 0, 180, max_speed, -max_speed);
+    int m_vry = map(myData.vry, 90, -90, max_speed, -max_speed);
+
+    moveMotors(m_vrx - m_vry, m_vrx + m_vry);
+  }
+  /*
+  Serial.print(">vrx: ");
+  Serial.println(myData.vrx);
+  Serial.print(">m_vrx: ");
+  Serial.println(m_vrx);
+
+  Serial.print(">vry: ");
+  Serial.println(myData.vry);
+  Serial.print(">m_vry: ");
+  Serial.println(m_vry);
+  */
+
+  /*
   Serial.print("Bytes received: ");
   Serial.println(len);
   Serial.print("vrx: ");
   Serial.println(myData.vrx);
-  
   Serial.print("vry: ");
   Serial.println(myData.vry);
-  
-  Serial.print("btn_1: ");
-  Serial.println(myData.btn_1);
-  Serial.print("btn_2: ");
-  Serial.println(myData.btn_2);
+  Serial.print("btn_b_l: ");
+  Serial.println(myData.btn_b_l);
+  Serial.print("btn_b_r: ");
+  Serial.println(myData.btn_b_r);
+  Serial.print("btn_r_l: ");
+  Serial.println(myData.btn_r_l);
+  Serial.print("btn_r_r: ");
+  Serial.println(myData.btn_r_r);  
   Serial.println();
+  */
+
+  /*
+  Serial.print(">vrx: ");
+  Serial.println(myData.vrx);
+  Serial.print(">vry: ");
+  Serial.println(myData.vry);
+  Serial.print(">btn_b_l: ");
+  Serial.println(myData.btn_b_l);
+  Serial.print(">btn_b_r: ");
+  Serial.println(myData.btn_b_r);
+  Serial.print(">btn_r_l: ");
+  Serial.println(myData.btn_r_l);
+  Serial.print(">btn_r_r: ");
+  Serial.println(myData.btn_r_r);
+  */
 
 }
 
@@ -778,7 +839,7 @@ bool IRAM_ATTR TimerHandler0(void * timerNo)
   last_y += y;
   last_theta += theta;
   
-  /*
+  
   Serial.print(">last_x:");
   Serial.println(last_x);
 
@@ -787,8 +848,7 @@ bool IRAM_ATTR TimerHandler0(void * timerNo)
 
   Serial.print(">last_theta:");
   Serial.println(last_theta);
-  */
-
+  
   //Serial.println(String((int32_t)ticks_encoder_r) + " | " + String((int32_t)ticks_encoder_l));
 
 
@@ -806,6 +866,7 @@ void moveMotors(int _a, int _b) {
 
 void loop()
 {
+  /*
   int speed_l = 20;
   int speed_r = 20;
   
@@ -889,6 +950,7 @@ void loop()
     moveMotors(0, 0);
   else
     moveMotors(output_l, output_r);
+  */
 
   /*
   Serial.print(">output_l:");
